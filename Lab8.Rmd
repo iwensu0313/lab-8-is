@@ -64,3 +64,118 @@ leaflet(oil_sf) %>%
 
 ```
 
+### Point Pattern Analysis
+
+tmap plot with the Texas state shapefile
+
+```{r}
+
+# want to read in any layer that starts with prefix 'states' (e.g. states.shp, states.sbn...)
+states <- st_read(dsn = ".", layer = "states")
+
+tex_border <- states %>% 
+  filter(STATE_NAME == "Texas") %>% 
+  st_transform(4326) # transform to the coordinate you want
+  
+# st_crs(tex_border) - to check what the coordinate reference system is
+  
+plot(tex_border)
+
+tm_shape(tex_border) +
+  tm_polygons() +
+  tm_shape(oil_sf) +
+  tm_dots(size = 0.3)
+
+  
+```
+
+### Convert the data to spatial points patterns (combination of point data and the bounding window)
+
+Took spatial info and converted into something that R recognizes for point pattern analysis
+
+```{r}
+
+spill_sp <- as(oil_sf, "Spatial")
+spill_ppp <- as(spill_sp, "ppp") # need to convert data to 'ppp' in order to do point pattern analysis
+
+tx_sp <- as(tex_border, "Spatial") # create outer window for doing analysis
+tw_owin <- as(tx_sp, "owin")
+
+all_ppp <- ppp(spill_ppp$x, spill_ppp$y, window = tw_owin) # corresponding longitude and longitude; bounding window is tw_owin
+
+all_ppp 
+
+```
+
+### Create a density plot:
+
+
+```{r}
+
+plot(density(all_ppp, sigma = 0.4)) # radius is 0.4
+
+```
+
+### Quadrat test for spatial evenness
+
+Are oil spills evenly distributed. Counts the number of events in each quadrant as well as the intensity and then use a chi-squared test to test for evenness.
+
+```{r}
+
+oil_qt <- quadrat.test(all_ppp, nx = 5, ny = 5) # 5 regions that exist horizonatally and vertically
+oil_qt
+
+# Reject - the data are not CSR (data is not evenly distributed); p value < 0.05
+
+plot(all_ppp)
+plot(oil_qt, add = TRUE, cex = 0.4)
+
+# some quadrants are not equally sized, so the ppp analysis will approximate number of events if each block was the same size 
+
+
+```
+
+Evaluating whether data follows CSR (which follows a poisson distribution)
+* If data more clustered than CSR? Then nearest neighbors will be closer together on average
+* If data less clustered than CSR? Then nearest neighbors will be further apart on average
+
+### G-Function for Nearest Neighbor Analysis
+
+```{r}
+
+lag <- seq(0,1, by = 0.01) # based on projection units (e.g. degree) - could find maximum distance between any nearest neighbor and a point to approximate where the data starts to peter (converge around 1.00 y-axis) 
+oil_gfun <- envelope(all_ppp, fun = Gest, r = lag, nsim = 100)  # run 100 simulations for our CSR
+
+# theo is our CSR and lo and hi confidence interval, obs is our actual observations
+
+ggplot(oil_gfun, aes(x = r, y = obs)) +
+  geom_line(color = "black") +
+  geom_line(aes(x = r, y = theo), color = "red")
+
+# our observed data has a higher proportion of point pairs with nearest neighbors at shorter distances (closer together) compared to CSR data -- data is more clustered than CSR
+
+```
+
+
+### Nearest neighbor using the L-function (Ripley's K, standardized)
+
+```{r}
+
+r2 <- seq(0,3, by = 0.5) # chose a large increment for now just so it won't take a long time, realistically probably use a smaller increment
+
+oil_lfun <- envelope(all_ppp, fun = Lest, r = r2, nsim = 20, global = TRUE) 
+# looks at every single point in space that has an event/oil spill and makes increasing bubble around it until it incorporates all other obs that exist
+# global = TRUE just makes sure you incorporate all your points
+
+ggplot(oil_lfun, aes(x = r2, y = obs)) +
+  geom_line(color = "black") +
+  geom_line(aes(x = r2, y = theo), color = "dodgerblue")
+
+# Results: higher densities of neighbors that exist at each event (bubble) compared to CSR
+
+```
+
+**Conclusions: Considering nearest neighbors and global neighbors, we found that there is greater clustering in our data compared to CSR.**
+
+
+
