@@ -9,9 +9,9 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Load packages
+### Load packages
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 
 library(tidyverse)
 library(sf)
@@ -20,6 +20,24 @@ library(leaflet)
 library(spatstat)
 library(maptools)
 library(corrplot)
+
+```
+
+### Read in data: column graph of Texas oil spills
+
+```{r}
+
+oil_spills <- read_csv("oil_spills.csv")
+
+df <- oil_spills %>% 
+  filter(`Accident State` == "TX" & `Accident Year` < 2017) %>% 
+  group_by(`Accident Year`) %>% 
+  summarise(Loss = sum(`Net Loss (Barrels)`))
+
+colnames(df) <- c("Year","Loss")
+
+ggplot(df, aes(x = Year, y = Loss)) +
+  geom_col()
 
 ```
 
